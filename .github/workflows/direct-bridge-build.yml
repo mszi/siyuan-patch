@@ -55,7 +55,7 @@ jobs:
         run: |
           go install golang.org/x/mobile/cmd/gomobile@2553ed8ce294
           "$(go env GOPATH)/bin/gomobile" init
-          "$(go env GOPATH)/bin/gomobile" bind -tags "fts5 sqlcipher" -ldflags "-s -w" -o "../../siyuan-android/app/libs/kernel.aar" -target android/arm64 -androidapi 26 ./
+          "$(go env GOPATH)/bin/gomobile" bind -tags "fts5 sqlcipher" -ldflags "-s -w" -o "../../../siyuan-android/app/libs/kernel.aar" -target android/arm64 -androidapi 26 ./
         env:
           CGO_ENABLED: 1
       - name: Build app
@@ -64,7 +64,7 @@ jobs:
           sed -i '/maven.aliyun.com/d' build.gradle
           mkdir -p app/src/main/assets
           cd ../siyuan/app
-          corepack enable
+          npm install -g pnpm@9.15.4
           pnpm install --no-frozen-lockfile
           pnpm run build
           zip -r ../../siyuan-android/app/src/main/assets/app.zip ./appearance ./guide ./stage ./changelogs
