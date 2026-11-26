@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..0000000
 --- /dev/null
 +++ b/app/src/main/java/org/b3log/siyuan/DirectBridgeService.java
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,134 @@
 +package org.b3log.siyuan;
 +
 +import android.app.*;
