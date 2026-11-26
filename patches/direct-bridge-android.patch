@@ -143,17 +143,16 @@ diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
 index 3816f87..0000000 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
-@@ -199,6 +199,12 @@
+@@ -228,9 +228,16 @@
          <service
              android:name=".KernelService"
              android:exported="false"
              android:foregroundServiceType="specialUse">
-@@
              <property
                  android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                  android:value="hosting" />
          </service>
-+
+ 
 +        <service
 +            android:name=".DirectBridgeService"
 +            android:exported="false"
@@ -162,3 +161,5 @@ index 3816f87..0000000 100644
 +                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
 +                android:value="S3 direct TCP bridge" />
 +        </service>
++
+         <!-- 监听系统广播以实现预约通知 -->
