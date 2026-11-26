@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..0000000
 --- /dev/null
 +++ b/app/src/main/java/org/b3log/siyuan/DirectBridgeService.java
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,133 @@
 +package org.b3log.siyuan;
 +
 +import android.app.*;
@@ -37,7 +37,7 @@ index 0000000..0000000
 +            .setSmallIcon(R.drawable.icon).setContentTitle("S3 Direct Bridge")
 +            .setContentText("Direct connection service running").setOngoing(true).build();
 +        ServiceCompat.startForeground(this, NOTIFICATION_ID, n,
-+            Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : 0);
++            Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE : 0);
 +        startBridge();
 +    }
 +
@@ -137,7 +137,6 @@ index 0000000..0000000
 +        stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy();
 +    }
 +    @Override public IBinder onBind(Intent i) { return null; }
-+}
 
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
 index 3816f87..0000000 100644
