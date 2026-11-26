@@ -31,7 +31,7 @@ public final class DirectBridgeService extends Service {
             .setSmallIcon(R.drawable.icon).setContentTitle("S3 Direct Bridge")
             .setContentText("Direct connection service running").setOngoing(true).build();
         ServiceCompat.startForeground(this, NOTIFICATION_ID, n,
-            Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : 0);
+            Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE : 0);
         startBridge();
     }
 
