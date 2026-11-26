@@ -138,3 +138,27 @@ index 0000000..0000000
 +    }
 +    @Override public IBinder onBind(Intent i) { return null; }
 +}
+
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 3816f87..0000000 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -199,6 +199,12 @@
+         <service
+             android:name=".KernelService"
+             android:exported="false"
+             android:foregroundServiceType="specialUse">
+@@
+             <property
+                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                 android:value="hosting" />
+         </service>
++
++        <service
++            android:name=".DirectBridgeService"
++            android:exported="false"
++            android:foregroundServiceType="specialUse">
++            <property
++                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
++                android:value="S3 direct TCP bridge" />
++        </service>
