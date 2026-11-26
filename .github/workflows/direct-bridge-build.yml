@@ -1,0 +1,76 @@
+name: direct-bridge-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/s3-direct-bridge]
+    paths:
+      - 'direct-bridge/**'
+      - '.github/workflows/direct-bridge-build.yml'
+      - 'patches/direct-bridge-android.patch'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Windows server
+        working-directory: direct-bridge/windows
+        run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: s3-direct-bridge-windows-x64
+          path: direct-bridge/windows/target/release/s3-direct-bridge-server.exe
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: patch
+      - name: Clone official v3.8.12 sources
+        run: |
+          git clone --depth 1 --branch v3.8.12 https://github.com/siyuan-note/siyuan.git siyuan
+          git clone --depth 1 --branch v3.8.12 https://github.com/siyuan-note/siyuan-android.git siyuan-android
+          git apply --directory=siyuan-android patch/patches/direct-bridge-android.patch
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: siyuan/kernel/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+      - name: Build kernel
+        working-directory: siyuan/kernel/mobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@2553ed8ce294
+          "$(go env GOPATH)/bin/gomobile" init
+          "$(go env GOPATH)/bin/gomobile" bind -tags "fts5 sqlcipher" -ldflags "-s -w" -o "../../siyuan-android/app/libs/kernel.aar" -target android/arm64 -androidapi 26 ./
+        env:
+          CGO_ENABLED: 1
+      - name: Build app
+        working-directory: siyuan-android
+        run: |
+          sed -i '/maven.aliyun.com/d' build.gradle
+          mkdir -p app/src/main/assets
+          cd ../siyuan/app
+          corepack enable
+          pnpm install --no-frozen-lockfile
+          pnpm run build
+          zip -r ../../siyuan-android/app/src/main/assets/app.zip ./appearance ./guide ./stage ./changelogs
+          cd ../../siyuan-android
+          ./gradlew :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: siyuan-3.8.12-android-direct-bridge
+          path: siyuan-android/app/build/outputs/apk/googleplay/debug/*.apk
