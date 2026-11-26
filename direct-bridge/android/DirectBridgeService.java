@@ -1,0 +1,134 @@
+package org.b3log.siyuan;
+
+import android.app.*;
+import android.content.*;
+import android.content.pm.ServiceInfo;
+import android.os.*;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.ServiceCompat;
+import java.io.*;
+import java.net.*;
+import java.security.*;
+import java.security.cert.*;
+import java.util.concurrent.*;
+import javax.net.ssl.*;
+
+/**
+ * Local TCP endpoint for the S3 Direct Bridge.
+ * Configuration is read from the "direct_bridge" preferences namespace.
+ */
+public final class DirectBridgeService extends Service {
+    private static final int NOTIFICATION_ID = 19008;
+    private volatile boolean running;
+    private ServerSocket local;
+    private ExecutorService workers;
+
+    @Override public void onCreate() {
+        super.onCreate();
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        nm.createNotificationChannel(new NotificationChannel("direct_bridge", "S3 Direct Bridge", NotificationManager.IMPORTANCE_LOW));
+        Notification n = new NotificationCompat.Builder(this, "direct_bridge")
+            .setSmallIcon(R.drawable.icon).setContentTitle("S3 Direct Bridge")
+            .setContentText("Direct connection service running").setOngoing(true).build();
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, n,
+            Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : 0);
+        startBridge();
+    }
+
+    private void startBridge() {
+        SharedPreferences p = getSharedPreferences("direct_bridge", MODE_PRIVATE);
+        String discovery = p.getString("discovery_url", "");
+        String p12 = p.getString("client_pkcs12", "");
+        String password = p.getString("client_pkcs12_password", "");
+        String pin = p.getString("server_cert_sha256", "");
+        if (discovery.isEmpty() || p12.isEmpty() || pin.isEmpty()) {
+            stopSelf();
+            return;
+        }
+        running = true;
+        workers = Executors.newCachedThreadPool();
+        workers.execute(() -> {
+            try (ServerSocket server = new ServerSocket(19008, 32, InetAddress.getByName("127.0.0.1"))) {
+                local = server;
+                while (running) {
+                    Socket client = server.accept();
+                    workers.execute(() -> pipe(client, discovery, p12, password, pin));
+                }
+            } catch (Exception e) { Utils.logError("direct-bridge", "local listener failed", e); stopSelf(); }
+        });
+    }
+
+    private void pipe(Socket localSocket, String discovery, String p12, String password, String pin) {
+        try (Socket localClient = localSocket) {
+            InetSocketAddress target = resolve(discovery);
+            SSLSocket tls = connect(target, p12, password, pin);
+            try (SSLSocket remote = tls) {
+                remote.startHandshake();
+                Thread up = new Thread(() -> copy(localClient, remote));
+                Thread down = new Thread(() -> copy(remote, localClient));
+                up.start(); down.start(); up.join(); down.join();
+            }
+        } catch (Exception e) { Utils.logError("direct-bridge", "tunnel failed", e); }
+    }
+
+    private InetSocketAddress resolve(String url) throws Exception {
+        if (!url.startsWith("https://")) throw new SecurityException("Discovery URL must use HTTPS");
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setInstanceFollowRedirects(false); c.setConnectTimeout(8000); c.setReadTimeout(8000);
+        c.setRequestMethod("GET");
+        int code = c.getResponseCode();
+        String location = c.getHeaderField("Location");
+        c.disconnect();
+        if (code < 300 || code >= 400 || location == null) throw new IOException("Expected HTTP redirect with Location, got " + code);
+        URI u = URI.create(location);
+        if (!"http".equalsIgnoreCase(u.getScheme()) && !"https".equalsIgnoreCase(u.getScheme())) throw new SecurityException("Unsupported redirect scheme");
+        if (u.getHost() == null || u.getPort() < 1 || u.getPort() > 65535) throw new IOException("Redirect must include host and explicit TCP port");
+        return new InetSocketAddress(u.getHost(), u.getPort());
+    }
+
+    private SSLSocket connect(InetSocketAddress address, String p12Path, String password, String pin) throws Exception {
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        try (InputStream in = new FileInputStream(p12Path)) { ks.load(in, password.toCharArray()); }
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(ks, password.toCharArray());
+        final String expected = pin.replace(":", "").toLowerCase();
+        X509TrustManager tm = new X509TrustManager() {
+            public void checkClientTrusted(X509Certificate[] c, String a) {}
+            public void checkServerTrusted(X509Certificate[] chain, String auth) throws CertificateException {
+                try {
+                    String actual = hex(MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded()));
+                    if (!actual.equals(expected)) throw new CertificateException("Server certificate pin mismatch");
+                    chain[0].checkValidity();
+                } catch (GeneralSecurityException e) { throw new CertificateException(e); }
+            }
+            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+        };
+        SSLContext ctx = SSLContext.getInstance("TLS");
+        ctx.init(kmf.getKeyManagers(), new TrustManager[]{tm}, new SecureRandom());
+        SSLSocket s = (SSLSocket) ctx.getSocketFactory().createSocket();
+        s.connect(address, 10000); s.setSoTimeout(0);
+        return s;
+    }
+
+    private static String hex(byte[] b) {
+        StringBuilder s = new StringBuilder();
+        for (byte v : b) s.append(String.format("%02x", v));
+        return s.toString();
+    }
+    private static void copy(Socket from, Socket to) {
+        try {
+            InputStream in = from.getInputStream(); OutputStream out = to.getOutputStream();
+            byte[] b = new byte[32768]; int n;
+            while ((n = in.read(b)) != -1) { out.write(b, 0, n); out.flush(); }
+        } catch (IOException ignored) {}
+        try { to.shutdownOutput(); } catch (IOException ignored) {}
+    }
+    @Override public int onStartCommand(Intent i, int flags, int id) { return START_STICKY; }
+    @Override public void onDestroy() {
+        running = false;
+        try { if (local != null) local.close(); } catch (IOException ignored) {}
+        if (workers != null) workers.shutdownNow();
+        stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy();
+    }
+    @Override public IBinder onBind(Intent i) { return null; }
+}
